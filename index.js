@@ -14,9 +14,9 @@ const {
 /* ─────────────────────────────
    CONFIG
 ───────────────────────────── */
-const VERIFIED_ROLE_ID = "1508262706715558061";
-const VERIFICATION_LOG_CHANNEL_ID = "1508329441145651220";
-const GUILD_ID = "1474936365866160201";
+const VERIFIED_ROLE_ID = "PUT_ROLE_ID_HERE";
+const VERIFICATION_LOG_CHANNEL_ID = "PUT_CHANNEL_ID_HERE";
+const GUILD_ID = "PUT_SERVER_ID_HERE";
 
 /* ─────────────────────────────
    CLIENT
@@ -33,16 +33,19 @@ const client = new Client({
 });
 
 /* ─────────────────────────────
-   DATA
+   DATA STORAGE
 ───────────────────────────── */
 const pendingVerifications = new Map();
 const verificationQueue = [];
 
 /* ─────────────────────────────
-   SLASH COMMAND REGISTRATION (GUILD = INSTANT)
+   SLASH COMMAND SETUP
 ───────────────────────────── */
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
+/* ─────────────────────────────
+   READY EVENT + SLASH REGISTER
+───────────────────────────── */
 client.once('ready', async () => {
     console.log(`🏛️ Archive Bot Online as ${client.user.tag}`);
 
@@ -73,7 +76,7 @@ client.on('messageCreate', async (message) => {
 
     const userId = message.author.id;
 
-    // TEST
+    // 🏓 TEST
     if (message.content === '!ping') {
         return message.reply('🏛️ Archive Core Online.');
     }
@@ -134,7 +137,7 @@ What systems are you interested in?
                 answers: [...data.answers]
             });
 
-            // LOG
+            // LOG CHANNEL
             if (staffChannel) {
                 staffChannel.send(
 `📥 **NEW VERIFICATION REQUEST**
@@ -167,7 +170,7 @@ client.on('interactionCreate', async (interaction) => {
 
     if (!interaction.isChatInputCommand()) return;
 
-    /* ───── /QUEUE ───── */
+    /* ───── /QUEUE (FIXED VERSION) ───── */
     if (interaction.commandName === 'queue') {
 
         if (!interaction.member.permissions.has('Administrator')) {
@@ -177,11 +180,11 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
+        // 🔥 FIX: prevents "Interaction Failed"
+        await interaction.deferReply({ ephemeral: true });
+
         if (verificationQueue.length === 0) {
-            return interaction.reply({
-                content: "📭 Queue is empty.",
-                ephemeral: true
-            });
+            return interaction.editReply("📭 Queue is empty.");
         }
 
         const user = verificationQueue[0];
@@ -212,10 +215,9 @@ client.on('interactionCreate', async (interaction) => {
                 .setStyle(ButtonStyle.Secondary)
         );
 
-        return interaction.reply({
+        return interaction.editReply({
             embeds: [embed],
-            components: [row],
-            ephemeral: true
+            components: [row]
         });
     }
 
