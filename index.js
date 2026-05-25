@@ -15,7 +15,8 @@ const {
    CONFIG
 ───────────────────────────── */
 const VERIFIED_ROLE_ID = "1508262706715558061";
-const VERIFICATION_LOG_CHANNEL_ID = "1508263402764763298";
+const VERIFICATION_LOG_CHANNEL_ID = "1508329441145651220";
+const GUILD_ID = "1474936365866160201";
 
 /* ─────────────────────────────
    CLIENT
@@ -32,35 +33,33 @@ const client = new Client({
 });
 
 /* ─────────────────────────────
-   SYSTEM STORAGE
+   DATA
 ───────────────────────────── */
 const pendingVerifications = new Map();
 const verificationQueue = [];
 
 /* ─────────────────────────────
-   SLASH COMMANDS
+   SLASH COMMAND REGISTRATION (GUILD = INSTANT)
 ───────────────────────────── */
-const commands = [
-    new SlashCommandBuilder()
-        .setName('queue')
-        .setDescription('View verification queue')
-        .toJSON()
-];
-
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
-/* ─────────────────────────────
-   READY EVENT
-───────────────────────────── */
 client.once('ready', async () => {
     console.log(`🏛️ Archive Bot Online as ${client.user.tag}`);
 
     try {
         await rest.put(
-            Routes.applicationCommands(client.user.id),
-            { body: commands }
+            Routes.applicationGuildCommands(client.user.id, GUILD_ID),
+            {
+                body: [
+                    new SlashCommandBuilder()
+                        .setName('queue')
+                        .setDescription('View verification queue')
+                        .toJSON()
+                ]
+            }
         );
-        console.log("✅ Slash commands registered");
+
+        console.log("✅ Slash commands registered (GUILD MODE)");
     } catch (err) {
         console.error(err);
     }
@@ -74,12 +73,12 @@ client.on('messageCreate', async (message) => {
 
     const userId = message.author.id;
 
-    // 🏓 TEST
+    // TEST
     if (message.content === '!ping') {
         return message.reply('🏛️ Archive Core Online.');
     }
 
-    /* ───────── VERIFY START ───────── */
+    /* ───── VERIFY START ───── */
     if (message.content === '!verify') {
 
         pendingVerifications.set(userId, { step: 1, answers: [] });
@@ -91,20 +90,20 @@ client.on('messageCreate', async (message) => {
 STEP 1:
 What brings you to Tabletop RPG Realms of Fantasy?
 
-(Examples: Power Rangers RPG, D&D resources, maps, homebrew)
+(Examples: Power Rangers RPG, D&D resources, maps, homebrew systems)
 
 Reply with your answer.`
             );
 
             message.reply("📨 Check your DMs.");
-        } catch (err) {
-            message.reply("❌ Enable DMs to verify.");
+        } catch {
+            message.reply("❌ Enable DMs.");
         }
 
         return;
     }
 
-    /* ───────── DM FLOW ───────── */
+    /* ───── DM FLOW ───── */
     if (message.channel.type === 1 && pendingVerifications.has(userId)) {
 
         const data = pendingVerifications.get(userId);
@@ -135,7 +134,7 @@ What systems are you interested in?
                 answers: [...data.answers]
             });
 
-            // LOG STAFF CHANNEL
+            // LOG
             if (staffChannel) {
                 staffChannel.send(
 `📥 **NEW VERIFICATION REQUEST**
@@ -162,67 +161,14 @@ ${data.answers[1]}`
 });
 
 /* ─────────────────────────────
-   SLASH COMMAND (QUEUE PANEL)
+   SLASH COMMANDS
 ───────────────────────────── */
 client.on('interactionCreate', async (interaction) => {
 
-    /* ───── QUEUE COMMAND ───── */
-    if (interaction.isChatInputCommand()) {
+    if (!interaction.isChatInputCommand()) return;
 
-        if (interaction.commandName === 'queue') {
-
-            if (!interaction.member.permissions.has('Administrator')) {
-                return interaction.reply({
-                    content: "❌ No permission.",
-                    ephemeral: true
-                });
-            }
-
-            if (verificationQueue.length === 0) {
-                return interaction.reply({
-                    content: "📭 Queue is empty.",
-                    ephemeral: true
-                });
-            }
-
-            const user = verificationQueue[0];
-
-            const embed = new EmbedBuilder()
-                .setTitle("📥 Verification Queue")
-                .setColor(0x00AEFF)
-                .setDescription(
-                    `**User:** ${user.tag}\n\n` +
-                    `**Interest:** ${user.answers[0]}\n` +
-                    `**Systems:** ${user.answers[1]}`
-                );
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('queue_approve')
-                    .setLabel('Approve')
-                    .setStyle(ButtonStyle.Success),
-
-                new ButtonBuilder()
-                    .setCustomId('queue_deny')
-                    .setLabel('Deny')
-                    .setStyle(ButtonStyle.Danger),
-
-                new ButtonBuilder()
-                    .setCustomId('queue_next')
-                    .setLabel('Next')
-                    .setStyle(ButtonStyle.Secondary)
-            );
-
-            return interaction.reply({
-                embeds: [embed],
-                components: [row],
-                ephemeral: true
-            });
-        }
-    }
-
-    /* ───── BUTTON HANDLER ───── */
-    if (interaction.isButton()) {
+    /* ───── /QUEUE ───── */
+    if (interaction.commandName === 'queue') {
 
         if (!interaction.member.permissions.has('Administrator')) {
             return interaction.reply({
@@ -231,47 +177,98 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
-        // APPROVE
-        if (interaction.customId === 'queue_approve') {
-
-            const user = verificationQueue.shift();
-            if (!user) {
-                return interaction.reply({
-                    content: "No users in queue.",
-                    ephemeral: true
-                });
-            }
-
-            const member = await interaction.guild.members.fetch(user.id);
-            await member.roles.add(VERIFIED_ROLE_ID);
-
+        if (verificationQueue.length === 0) {
             return interaction.reply({
-                content: `🟢 Approved ${user.tag}`,
+                content: "📭 Queue is empty.",
                 ephemeral: true
             });
         }
 
-        // DENY
-        if (interaction.customId === 'queue_deny') {
+        const user = verificationQueue[0];
 
-            const user = verificationQueue.shift();
-            if (!user) {
-                return interaction.reply({
-                    content: "No users in queue.",
-                    ephemeral: true
-                });
-            }
+        const embed = new EmbedBuilder()
+            .setTitle("📥 Verification Queue")
+            .setColor(0x00AEFF)
+            .setDescription(
+                `**User:** ${user.tag}\n\n` +
+                `**Interest:** ${user.answers[0]}\n` +
+                `**Systems:** ${user.answers[1]}`
+            );
 
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('queue_approve')
+                .setLabel('Approve')
+                .setStyle(ButtonStyle.Success),
+
+            new ButtonBuilder()
+                .setCustomId('queue_deny')
+                .setLabel('Deny')
+                .setStyle(ButtonStyle.Danger),
+
+            new ButtonBuilder()
+                .setCustomId('queue_next')
+                .setLabel('Next')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+        return interaction.reply({
+            embeds: [embed],
+            components: [row],
+            ephemeral: true
+        });
+    }
+
+    /* ───── BUTTONS ───── */
+    if (!interaction.isButton()) return;
+
+    if (!interaction.member.permissions.has('Administrator')) {
+        return interaction.reply({
+            content: "❌ No permission.",
+            ephemeral: true
+        });
+    }
+
+    // APPROVE
+    if (interaction.customId === 'queue_approve') {
+
+        const user = verificationQueue.shift();
+        if (!user) {
             return interaction.reply({
-                content: `🔴 Denied ${user.tag}`,
+                content: "Queue empty.",
                 ephemeral: true
             });
         }
 
-        // NEXT
-        if (interaction.customId === 'queue_next') {
-            return interaction.deferUpdate();
+        const member = await interaction.guild.members.fetch(user.id);
+        await member.roles.add(VERIFIED_ROLE_ID);
+
+        return interaction.reply({
+            content: `🟢 Approved ${user.tag}`,
+            ephemeral: true
+        });
+    }
+
+    // DENY
+    if (interaction.customId === 'queue_deny') {
+
+        const user = verificationQueue.shift();
+        if (!user) {
+            return interaction.reply({
+                content: "Queue empty.",
+                ephemeral: true
+            });
         }
+
+        return interaction.reply({
+            content: `🔴 Denied ${user.tag}`,
+            ephemeral: true
+        });
+    }
+
+    // NEXT
+    if (interaction.customId === 'queue_next') {
+        return interaction.deferUpdate();
     }
 });
 
