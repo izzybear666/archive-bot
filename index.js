@@ -57,7 +57,10 @@ client.on('messageCreate', async (message) => {
 
         pendingVerifications.delete(userId);
 
-        message.reply("✅ Thank you. Your request has been submitted for review.");
+        message.reply(
+"✅ Your verification request has been sent to staff.\n" +
+"🕒 Please wait for manual approval from the archive team."
+);
     }
 });
 
