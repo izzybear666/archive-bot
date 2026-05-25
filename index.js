@@ -14,8 +14,8 @@ const {
 /* ─────────────────────────────
    CONFIG
 ───────────────────────────── */
-const VERIFIED_ROLE_ID = "PUT_ROLE_ID_HERE";
-const VERIFICATION_LOG_CHANNEL_ID = "PUT_CHANNEL_ID_HERE";
+const VERIFIED_ROLE_ID = "1508262706715558061";
+const VERIFICATION_LOG_CHANNEL_ID = "1508263402764763298";
 
 /* ─────────────────────────────
    CLIENT
