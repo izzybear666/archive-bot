@@ -18,7 +18,7 @@ const VERIFIED_ROLE_ID = "PUT_ROLE_ID_HERE";
 const VERIFICATION_LOG_CHANNEL_ID = "PUT_CHANNEL_ID_HERE";
 
 /* ─────────────────────────────
-   CLIENT SETUP
+   CLIENT
 ───────────────────────────── */
 const client = new Client({
     intents: [
@@ -31,15 +31,19 @@ const client = new Client({
     partials: ["CHANNEL"]
 });
 
+/* ─────────────────────────────
+   SYSTEM STORAGE
+───────────────────────────── */
 const pendingVerifications = new Map();
+const verificationQueue = [];
 
 /* ─────────────────────────────
-   SLASH COMMAND
+   SLASH COMMANDS
 ───────────────────────────── */
 const commands = [
     new SlashCommandBuilder()
-        .setName('verify-panel')
-        .setDescription('Open staff verification panel')
+        .setName('queue')
+        .setDescription('View verification queue')
         .toJSON()
 ];
 
@@ -63,7 +67,7 @@ client.once('ready', async () => {
 });
 
 /* ─────────────────────────────
-   MESSAGE SYSTEM
+   MESSAGE HANDLER
 ───────────────────────────── */
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
@@ -77,6 +81,7 @@ client.on('messageCreate', async (message) => {
 
     /* ───────── VERIFY START ───────── */
     if (message.content === '!verify') {
+
         pendingVerifications.set(userId, { step: 1, answers: [] });
 
         try {
@@ -84,17 +89,16 @@ client.on('messageCreate', async (message) => {
 `🏛️ **Archive Verification Started**
 
 STEP 1:
-
 What brings you to Tabletop RPG Realms of Fantasy?
 
-(Examples: Power Rangers RPG, D&D resources, map tools, homebrew systems)
+(Examples: Power Rangers RPG, D&D resources, maps, homebrew)
 
 Reply with your answer.`
             );
 
-            message.reply("📨 Check your DMs to continue verification.");
+            message.reply("📨 Check your DMs.");
         } catch (err) {
-            message.reply("❌ Please enable DMs so I can verify you.");
+            message.reply("❌ Enable DMs to verify.");
         }
 
         return;
@@ -115,19 +119,23 @@ Reply with your answer.`
 
             return message.reply(
 `STEP 2:
-
-What tabletop systems are you most interested in?
-
-(Examples: D&D 5e, Power Rangers RPG, Cyberpunk RED, homebrew systems)
-
-Reply with your answer.`
+What systems are you interested in?
+(D&D, Power Rangers RPG, Cyberpunk RED, etc.)`
             );
         }
 
-        // STEP 2 FINAL
+        // FINAL STEP
         if (data.step === 2) {
             data.answers.push(message.content);
 
+            // ADD TO QUEUE
+            verificationQueue.push({
+                id: message.author.id,
+                tag: message.author.tag,
+                answers: [...data.answers]
+            });
+
+            // LOG STAFF CHANNEL
             if (staffChannel) {
                 staffChannel.send(
 `📥 **NEW VERIFICATION REQUEST**
@@ -146,57 +154,22 @@ ${data.answers[1]}`
             pendingVerifications.delete(userId);
 
             return message.reply(
-`✅ Verification submitted.
-
-🕒 Staff will review your request.
+`✅ Submitted to staff queue.
 🏛️ Please wait for approval.`
             );
         }
     }
-
-    /* ───────── STAFF COMMANDS ───────── */
-
-    if (message.content.startsWith('!approve')) {
-        if (!message.member.permissions.has('Administrator')) {
-            return message.reply("❌ No permission.");
-        }
-
-        const user = message.mentions.members.first();
-        if (!user) return message.reply("❌ Mention a user.");
-
-        await user.roles.add(VERIFIED_ROLE_ID);
-
-        return message.channel.send(`🟢 ${user.user.tag} VERIFIED.`);
-    }
-
-    if (message.content.startsWith('!deny')) {
-        if (!message.member.permissions.has('Administrator')) {
-            return message.reply("❌ No permission.");
-        }
-
-        const user = message.mentions.members.first();
-        if (!user) return message.reply("❌ Mention a user.");
-
-        return message.channel.send(`🔴 ${user.user.tag} denied.`);
-    }
-
-    if (message.content === '!pending') {
-        if (!message.member.permissions.has('Administrator')) {
-            return message.reply("❌ No permission.");
-        }
-
-        return message.channel.send("📥 Check verification logs channel.");
-    }
 });
 
 /* ─────────────────────────────
-   SLASH PANEL
+   SLASH COMMAND (QUEUE PANEL)
 ───────────────────────────── */
 client.on('interactionCreate', async (interaction) => {
 
+    /* ───── QUEUE COMMAND ───── */
     if (interaction.isChatInputCommand()) {
 
-        if (interaction.commandName === 'verify-panel') {
+        if (interaction.commandName === 'queue') {
 
             if (!interaction.member.permissions.has('Administrator')) {
                 return interaction.reply({
@@ -205,21 +178,39 @@ client.on('interactionCreate', async (interaction) => {
                 });
             }
 
+            if (verificationQueue.length === 0) {
+                return interaction.reply({
+                    content: "📭 Queue is empty.",
+                    ephemeral: true
+                });
+            }
+
+            const user = verificationQueue[0];
+
             const embed = new EmbedBuilder()
-                .setTitle("🏛️ Verification Panel")
-                .setDescription("Manual archive control system.")
-                .setColor(0x00AEFF);
+                .setTitle("📥 Verification Queue")
+                .setColor(0x00AEFF)
+                .setDescription(
+                    `**User:** ${user.tag}\n\n` +
+                    `**Interest:** ${user.answers[0]}\n` +
+                    `**Systems:** ${user.answers[1]}`
+                );
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
-                    .setCustomId('approve_user')
+                    .setCustomId('queue_approve')
                     .setLabel('Approve')
                     .setStyle(ButtonStyle.Success),
 
                 new ButtonBuilder()
-                    .setCustomId('deny_user')
+                    .setCustomId('queue_deny')
                     .setLabel('Deny')
-                    .setStyle(ButtonStyle.Danger)
+                    .setStyle(ButtonStyle.Danger),
+
+                new ButtonBuilder()
+                    .setCustomId('queue_next')
+                    .setLabel('Next')
+                    .setStyle(ButtonStyle.Secondary)
             );
 
             return interaction.reply({
@@ -230,6 +221,7 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
+    /* ───── BUTTON HANDLER ───── */
     if (interaction.isButton()) {
 
         if (!interaction.member.permissions.has('Administrator')) {
@@ -239,18 +231,46 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
-        if (interaction.customId === 'approve_user') {
+        // APPROVE
+        if (interaction.customId === 'queue_approve') {
+
+            const user = verificationQueue.shift();
+            if (!user) {
+                return interaction.reply({
+                    content: "No users in queue.",
+                    ephemeral: true
+                });
+            }
+
+            const member = await interaction.guild.members.fetch(user.id);
+            await member.roles.add(VERIFIED_ROLE_ID);
+
             return interaction.reply({
-                content: "🟢 Approved (manual role still required if not assigned).",
+                content: `🟢 Approved ${user.tag}`,
                 ephemeral: true
             });
         }
 
-        if (interaction.customId === 'deny_user') {
+        // DENY
+        if (interaction.customId === 'queue_deny') {
+
+            const user = verificationQueue.shift();
+            if (!user) {
+                return interaction.reply({
+                    content: "No users in queue.",
+                    ephemeral: true
+                });
+            }
+
             return interaction.reply({
-                content: "🔴 Denied.",
+                content: `🔴 Denied ${user.tag}`,
                 ephemeral: true
             });
+        }
+
+        // NEXT
+        if (interaction.customId === 'queue_next') {
+            return interaction.deferUpdate();
         }
     }
 });
