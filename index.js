@@ -1,6 +1,8 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 
+const VERIFIED_ROLE_ID = "PUT_ROLE_ID_HERE";
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -16,17 +18,21 @@ client.once('ready', () => {
     console.log(`🏛️ Archive Bot Online as ${client.user.tag}`);
 });
 
+// ─────────────────────────────
+// BASIC TEST COMMAND
+// ─────────────────────────────
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
     const userId = message.author.id;
 
-    // 🏓 test command
     if (message.content === '!ping') {
-        message.reply('🏛️ Archive Core Online.');
+        return message.reply('🏛️ Archive Core Online.');
     }
 
-    // 🔐 verify command
+    // ─────────────────────────────
+    // USER VERIFICATION SYSTEM
+    // ─────────────────────────────
     if (message.content === '!verify') {
         pendingVerifications.set(userId, true);
 
@@ -38,12 +44,12 @@ client.on('messageCreate', async (message) => {
             message.reply("Please enable DMs so I can verify you.");
         });
 
-        message.reply("📨 Check your DMs to complete verification.");
+        return message.reply("📨 Check your DMs to complete verification.");
     }
 
-    // 📩 handle DM response
+    // Handle DM response
     if (message.channel.type === 1 && pendingVerifications.has(userId)) {
-        const staffChannel = client.channels.cache.find(
+        const staffChannel = message.guild?.channels?.cache.find(
             c => c.name === "verification-logs"
         );
 
@@ -57,10 +63,49 @@ client.on('messageCreate', async (message) => {
 
         pendingVerifications.delete(userId);
 
-        message.reply(
-"✅ Your verification request has been sent to staff.\n" +
-"🕒 Please wait for manual approval from the archive team."
-);
+        return message.reply(
+            "✅ Your verification request has been sent to staff.\n" +
+            "🕒 Please wait for manual approval from the archive team."
+        );
+    }
+
+    // ─────────────────────────────
+    // STAFF COMMANDS
+    // ─────────────────────────────
+
+    // APPROVE USER
+    if (message.content.startsWith('!approve')) {
+        if (!message.member.permissions.has('Administrator')) {
+            return message.reply("❌ You don't have permission.");
+        }
+
+        const user = message.mentions.members.first();
+        if (!user) return message.reply("❌ Mention a user.");
+
+        user.roles.add(VERIFIED_ROLE_ID);
+
+        return message.channel.send(`🟢 ${user.user.tag} has been VERIFIED.`);
+    }
+
+    // DENY USER
+    if (message.content.startsWith('!deny')) {
+        if (!message.member.permissions.has('Administrator')) {
+            return message.reply("❌ You don't have permission.");
+        }
+
+        const user = message.mentions.members.first();
+        if (!user) return message.reply("❌ Mention a user.");
+
+        return message.channel.send(`🔴 ${user.user.tag} has been denied access.`);
+    }
+
+    // PENDING CHECK
+    if (message.content === '!pending') {
+        if (!message.member.permissions.has('Administrator')) {
+            return message.reply("❌ You don't have permission.");
+        }
+
+        return message.channel.send("📥 Check #verification-logs for pending requests.");
     }
 });
 
