@@ -11,8 +11,15 @@ const {
     Routes
 } = require('discord.js');
 
+/* ─────────────────────────────
+   CONFIG
+───────────────────────────── */
 const VERIFIED_ROLE_ID = "PUT_ROLE_ID_HERE";
+const VERIFICATION_LOG_CHANNEL_ID = "PUT_CHANNEL_ID_HERE";
 
+/* ─────────────────────────────
+   CLIENT SETUP
+───────────────────────────── */
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -27,7 +34,7 @@ const client = new Client({
 const pendingVerifications = new Map();
 
 /* ─────────────────────────────
-   SLASH COMMAND SETUP
+   SLASH COMMAND
 ───────────────────────────── */
 const commands = [
     new SlashCommandBuilder()
@@ -56,7 +63,7 @@ client.once('ready', async () => {
 });
 
 /* ─────────────────────────────
-   MESSAGE HANDLER
+   MESSAGE SYSTEM
 ───────────────────────────── */
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
@@ -68,60 +75,57 @@ client.on('messageCreate', async (message) => {
         return message.reply('🏛️ Archive Core Online.');
     }
 
-    /* ────────────────
-       VERIFY START
-    ──────────────── */
+    /* ───────── VERIFY START ───────── */
     if (message.content === '!verify') {
         pendingVerifications.set(userId, { step: 1, answers: [] });
 
-        message.author.send(
+        try {
+            await message.author.send(
 `🏛️ **Archive Verification Started**
 
-Step 1 of 2:
+STEP 1:
 
 What brings you to Tabletop RPG Realms of Fantasy?
-(Example: Power Rangers RPG, D&D resources, map tools, etc.)
+
+(Examples: Power Rangers RPG, D&D resources, map tools, homebrew systems)
 
 Reply with your answer.`
-        ).catch(() => {
-            message.reply("Please enable DMs so I can verify you.");
-        });
+            );
 
-        return message.reply("📨 Check your DMs to complete verification.");
+            message.reply("📨 Check your DMs to continue verification.");
+        } catch (err) {
+            message.reply("❌ Please enable DMs so I can verify you.");
+        }
+
+        return;
     }
 
-    /* ────────────────
-       DM QUESTION FLOW
-    ──────────────── */
+    /* ───────── DM FLOW ───────── */
     if (message.channel.type === 1 && pendingVerifications.has(userId)) {
 
         const data = pendingVerifications.get(userId);
 
-        const staffChannel = message.guild?.channels?.cache.find(
-            c => c.name === "verification-logs"
-        );
+        const staffChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID);
 
-        // STEP 1 RESPONSE
+        // STEP 1
         if (data.step === 1) {
-
             data.answers.push(message.content);
             data.step = 2;
-
             pendingVerifications.set(userId, data);
 
             return message.reply(
-`Step 2 of 2:
+`STEP 2:
 
 What tabletop systems are you most interested in?
+
 (Examples: D&D 5e, Power Rangers RPG, Cyberpunk RED, homebrew systems)
 
 Reply with your answer.`
             );
         }
 
-        // STEP 2 RESPONSE (FINAL SUBMISSION)
+        // STEP 2 FINAL
         if (data.step === 2) {
-
             data.answers.push(message.content);
 
             if (staffChannel) {
@@ -142,17 +146,15 @@ ${data.answers[1]}`
             pendingVerifications.delete(userId);
 
             return message.reply(
-`✅ Your verification is complete.
+`✅ Verification submitted.
 
-🕒 Staff will review your request soon.
-🏛️ Please wait for approval from the archive team.`
+🕒 Staff will review your request.
+🏛️ Please wait for approval.`
             );
         }
     }
 
-    /* ────────────────
-       STAFF COMMANDS
-    ──────────────── */
+    /* ───────── STAFF COMMANDS ───────── */
 
     if (message.content.startsWith('!approve')) {
         if (!message.member.permissions.has('Administrator')) {
@@ -162,9 +164,9 @@ ${data.answers[1]}`
         const user = message.mentions.members.first();
         if (!user) return message.reply("❌ Mention a user.");
 
-        user.roles.add(VERIFIED_ROLE_ID);
+        await user.roles.add(VERIFIED_ROLE_ID);
 
-        return message.channel.send(`🟢 ${user.user.tag} has been VERIFIED.`);
+        return message.channel.send(`🟢 ${user.user.tag} VERIFIED.`);
     }
 
     if (message.content.startsWith('!deny')) {
@@ -175,7 +177,7 @@ ${data.answers[1]}`
         const user = message.mentions.members.first();
         if (!user) return message.reply("❌ Mention a user.");
 
-        return message.channel.send(`🔴 ${user.user.tag} has been denied.`);
+        return message.channel.send(`🔴 ${user.user.tag} denied.`);
     }
 
     if (message.content === '!pending') {
@@ -183,7 +185,7 @@ ${data.answers[1]}`
             return message.reply("❌ No permission.");
         }
 
-        return message.channel.send("📥 Check #verification-logs for pending requests.");
+        return message.channel.send("📥 Check verification logs channel.");
     }
 });
 
@@ -204,8 +206,8 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             const embed = new EmbedBuilder()
-                .setTitle("🏛️ Verification Control Panel")
-                .setDescription("Manual archive verification controls.")
+                .setTitle("🏛️ Verification Panel")
+                .setDescription("Manual archive control system.")
                 .setColor(0x00AEFF);
 
             const row = new ActionRowBuilder().addComponents(
@@ -239,7 +241,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (interaction.customId === 'approve_user') {
             return interaction.reply({
-                content: "🟢 Approved (manual assignment still required).",
+                content: "🟢 Approved (manual role still required if not assigned).",
                 ephemeral: true
             });
         }
