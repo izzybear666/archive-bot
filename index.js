@@ -18,7 +18,7 @@ const VERIFIED_ROLE_ID = "PUT_ROLE_ID_HERE";
 const VERIFICATION_LOG_CHANNEL_ID = "PUT_CHANNEL_ID_HERE";
 
 /* ─────────────────────────────
-   CLIENT
+   CLIENT SETUP
 ───────────────────────────── */
 const client = new Client({
     intents: [
@@ -31,31 +31,22 @@ const client = new Client({
     partials: ["CHANNEL"]
 });
 
-/* ─────────────────────────────
-   STORAGE
-───────────────────────────── */
 const pendingVerifications = new Map();
-const verificationQueue = new Map();
 
 /* ─────────────────────────────
-   SLASH COMMANDS
+   SLASH COMMAND
 ───────────────────────────── */
 const commands = [
     new SlashCommandBuilder()
         .setName('verify-panel')
         .setDescription('Open staff verification panel')
-        .toJSON(),
-
-    new SlashCommandBuilder()
-        .setName('queue')
-        .setDescription('View verification queue')
         .toJSON()
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
 /* ─────────────────────────────
-   READY
+   READY EVENT
 ───────────────────────────── */
 client.once('ready', async () => {
     console.log(`🏛️ Archive Bot Online as ${client.user.tag}`);
@@ -93,14 +84,17 @@ client.on('messageCreate', async (message) => {
 `🏛️ **Archive Verification Started**
 
 STEP 1:
+
 What brings you to Tabletop RPG Realms of Fantasy?
+
+(Examples: Power Rangers RPG, D&D resources, map tools, homebrew systems)
 
 Reply with your answer.`
             );
 
             message.reply("📨 Check your DMs to continue verification.");
-        } catch {
-            message.reply("❌ Please enable DMs.");
+        } catch (err) {
+            message.reply("❌ Please enable DMs so I can verify you.");
         }
 
         return;
@@ -110,6 +104,7 @@ Reply with your answer.`
     if (message.channel.type === 1 && pendingVerifications.has(userId)) {
 
         const data = pendingVerifications.get(userId);
+
         const staffChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID);
 
         // STEP 1
@@ -120,22 +115,18 @@ Reply with your answer.`
 
             return message.reply(
 `STEP 2:
-What tabletop systems are you interested in?`
+
+What tabletop systems are you most interested in?
+
+(Examples: D&D 5e, Power Rangers RPG, Cyberpunk RED, homebrew systems)
+
+Reply with your answer.`
             );
         }
 
-        // FINAL STEP
+        // STEP 2 FINAL
         if (data.step === 2) {
             data.answers.push(message.content);
-
-            // SAVE TO QUEUE
-            verificationQueue.set(userId, {
-                tag: message.author.tag,
-                id: message.author.id,
-                answers: data.answers
-            });
-
-            pendingVerifications.delete(userId);
 
             if (staffChannel) {
                 staffChannel.send(
@@ -148,67 +139,75 @@ What tabletop systems are you interested in?`
 ${data.answers[0]}
 
 🎲 Systems:
-${data.answers[1]}
-
-🟡 Status: PENDING`
+${data.answers[1]}`
                 );
             }
 
+            pendingVerifications.delete(userId);
+
             return message.reply(
-`✅ Submitted to staff queue.
-Please wait for approval.`
+`✅ Verification submitted.
+
+🕒 Staff will review your request.
+🏛️ Please wait for approval.`
             );
         }
     }
 
     /* ───────── STAFF COMMANDS ───────── */
 
-    if (message.content.startsWith('!approvequeue')) {
+    if (message.content.startsWith('!approve')) {
         if (!message.member.permissions.has('Administrator')) {
             return message.reply("❌ No permission.");
         }
 
-        const userId = message.content.split(" ")[1];
-        const member = await message.guild.members.fetch(userId).catch(() => null);
+        const user = message.mentions.members.first();
+        if (!user) return message.reply("❌ Mention a user.");
 
-        if (!member) return message.reply("❌ User not found.");
+        await user.roles.add(VERIFIED_ROLE_ID);
 
-        await member.roles.add(VERIFIED_ROLE_ID);
-        verificationQueue.delete(userId);
-
-        return message.channel.send(`🟢 Approved + Verified.`);
+        return message.channel.send(`🟢 ${user.user.tag} VERIFIED.`);
     }
 
-    if (message.content.startsWith('!denyqueue')) {
+    if (message.content.startsWith('!deny')) {
         if (!message.member.permissions.has('Administrator')) {
             return message.reply("❌ No permission.");
         }
 
-        const userId = message.content.split(" ")[1];
+        const user = message.mentions.members.first();
+        if (!user) return message.reply("❌ Mention a user.");
 
-        verificationQueue.delete(userId);
+        return message.channel.send(`🔴 ${user.user.tag} denied.`);
+    }
 
-        return message.channel.send(`🔴 Removed from queue.`);
+    if (message.content === '!pending') {
+        if (!message.member.permissions.has('Administrator')) {
+            return message.reply("❌ No permission.");
+        }
+
+        return message.channel.send("📥 Check verification logs channel.");
     }
 });
 
 /* ─────────────────────────────
-   SLASH + PANEL SYSTEM
+   SLASH PANEL
 ───────────────────────────── */
 client.on('interactionCreate', async (interaction) => {
 
-    /* ───── VERIFY PANEL ───── */
     if (interaction.isChatInputCommand()) {
 
         if (interaction.commandName === 'verify-panel') {
 
             if (!interaction.member.permissions.has('Administrator')) {
-                return interaction.reply({ content: "❌ No permission.", ephemeral: true });
+                return interaction.reply({
+                    content: "❌ No permission.",
+                    ephemeral: true
+                });
             }
 
             const embed = new EmbedBuilder()
                 .setTitle("🏛️ Verification Panel")
-                .setDescription("Staff control system")
+                .setDescription("Manual archive control system.")
                 .setColor(0x00AEFF);
 
             const row = new ActionRowBuilder().addComponents(
@@ -229,44 +228,20 @@ client.on('interactionCreate', async (interaction) => {
                 ephemeral: true
             });
         }
-
-        /* ───── QUEUE VIEW ───── */
-        if (interaction.commandName === 'queue') {
-
-            if (!interaction.member.permissions.has('Administrator')) {
-                return interaction.reply({ content: "❌ No permission.", ephemeral: true });
-            }
-
-            if (verificationQueue.size === 0) {
-                return interaction.reply({ content: "📭 Queue empty.", ephemeral: true });
-            }
-
-            let output = "📥 VERIFICATION QUEUE\n\n";
-
-            verificationQueue.forEach((data) => {
-                output +=
-`👤 ${data.tag}
-🆔 ${data.id}
-🎯 ${data.answers[0]}
-🎲 ${data.answers[1]}
-
------------------\n`;
-            });
-
-            return interaction.reply({ content: output, ephemeral: true });
-        }
     }
 
-    /* ───── BUTTONS ───── */
     if (interaction.isButton()) {
 
         if (!interaction.member.permissions.has('Administrator')) {
-            return interaction.reply({ content: "❌ No permission.", ephemeral: true });
+            return interaction.reply({
+                content: "❌ No permission.",
+                ephemeral: true
+            });
         }
 
         if (interaction.customId === 'approve_user') {
             return interaction.reply({
-                content: "🟢 Approved (manual assignment via queue still available).",
+                content: "🟢 Approved (manual role still required if not assigned).",
                 ephemeral: true
             });
         }
